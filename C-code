@@ -1,0 +1,173 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+
+pthread_mutex_t lock;
+pthread_cond_t queue_full, queue_empty;
+
+// Shared variable
+int items_in_queue = 0;
+
+
+// Structure for producer
+struct thread_data_prod
+{
+    int thread_id;
+    int items_to_produce;
+    int queue_size;
+};
+
+
+// Structure for consumer
+struct thread_data_cons
+{
+    int thread_id;
+    int items_to_consume;
+};
+
+
+// Producer thread routine
+void *producer(void *threadarg) {
+	// TO DO
+	struct thread_data_prod* data = (struct thread_data_prod*) threadarg;//threadarg is a struct so cast it to one so it can be used
+	int produced_count = 0;//the amount of items being produced
+	
+	while (produced_count < data->items_to_produce) //while we haven't met our quota of (items_to_produce) number of items
+	{
+	    pthread_mutex_lock(&lock);//lock so no other threads change items_in_queue while we are using it
+	    
+	    if ( items_in_queue == data->queue_size ) { //if the queue is full
+	        pthread_cond_wait(&queue_empty,&lock); //wait for the signal: queue_empty, from the consumer
+	        printf("queue full. Producer %d is going to sleep.\n",data->thread_id);
+	    }
+	    produced_count++;//produce a cookie
+	    items_in_queue++;//put it in the queue
+	    
+	    pthread_cond_broadcast(&queue_full);//if the consumers are waiting for items/queue is empty, let them know it's not anymore
+	    pthread_mutex_unlock(&lock);//were done so unlock so other threads can do same thing
+	}
+	
+	printf("Producer %d produced %d items. Exiting.\n", data->thread_id, produced_count);
+	pthread_exit(NULL);
+}
+
+
+// Consumer thread routine
+void *consumer(void *threadarg) {
+	// TO DO
+	struct thread_data_cons* data = (struct thread_data_cons*) threadarg;//cast threadarg to struct since that is what is was originally
+	int consumed_count = 0;//keep track of items consumed.
+	
+	while (consumed_count < data->items_to_consume) //while we haven't met our quota of items to consume
+	{
+	    pthread_mutex_lock(&lock);//lock thread access so we can change our data
+	    
+	    if ( items_in_queue == 0 ) { //if there are no items in the queue
+	        pthread_cond_wait(&queue_full,&lock); //wait for signal from producer that queue is full( or there is a least 1 cookie)
+	        printf("queue empty. Consumer %d is going to sleep.\n",data->thread_id);
+	    }
+	    consumed_count++;//increment until we meet quota or finish off the items in the queue
+	    items_in_queue--;//consume a cookie
+	    
+	    pthread_cond_broadcast(&queue_empty);//let the producers know that the queue is empty
+	    pthread_mutex_unlock(&lock);//we are done with this iteration so unlock for other producers or consumers 
+	}
+	    
+	   
+	
+	printf("Consumer %d consumed %d items. Exiting.\n", data->thread_id, consumed_count);
+	pthread_exit(NULL);
+}
+
+
+
+int main(int argc, char* argv[]) {
+    
+    int nproducer;
+    int items_to_prod;
+    int nconsumer;
+    int items_to_cons;
+    int queue_size;
+    
+    if (argc == 6) {
+        //prodcuer varaibles
+        nproducer = atoi(argv[1]);
+        items_to_prod = atoi(argv[2]);
+        
+        //consumer variables
+        nconsumer = atoi(argv[3]);
+        items_to_cons = atoi(argv[4]);
+        //both
+        queue_size = atoi(argv[5]);
+        
+        
+        if (nproducer * items_to_prod != nconsumer * items_to_cons) {
+            fprintf(stderr, "Number of items to be produced and consumed do not match.\n");
+            return -1;
+        }
+    }
+    else {
+        fprintf(stderr, "Usage: %s nproducer items_to_prod nconsumer items_to_cons queue_size\nExiting.\n", argv[0]);
+        return -1;
+    }
+    
+    
+    // mutex initialize
+	pthread_mutex_init(&lock, NULL);
+	
+	// condition variable initialize
+	pthread_cond_init(&queue_full, NULL);
+	pthread_cond_init(&queue_empty, NULL);
+	
+	// thread create
+	pthread_t producerThreads[nproducer];
+	pthread_t consumerThreads[nconsumer];
+	
+	struct thread_data_prod data_prod[nproducer];
+	struct thread_data_cons data_cons[nconsumer];
+	
+	// populate the data structure first
+	// start producer threads
+	
+	
+	
+	for (int i = 0; i < nproducer; i++) {
+	    data_prod[i].thread_id = i;
+        data_prod[i].items_to_produce = items_to_prod;
+        data_prod[i].queue_size = queue_size;
+       
+       pthread_create(&producerThreads[i],NULL,producer, (void*)&data_prod[i]);
+	}
+	
+	// populate the data structure first
+	// start consumer threads
+	for (int i = 0; i < nconsumer; i++) {
+	    // TO DO
+        data_cons[i].thread_id = i;
+        data_cons[i].items_to_consume = items_to_cons;
+        
+        pthread_create(&consumerThreads[i],NULL,consumer, (void*)&data_cons[i]);
+	}
+
+    // join producer threads
+	for (int i = 0; i < nproducer; i++) {
+		pthread_join(producerThreads[i], NULL);
+	}
+    
+    // join consumer threads
+	for (int i = 0; i < nconsumer; i++) {
+		pthread_join(consumerThreads[i], NULL);
+	}
+
+
+    // mutex destroy
+	pthread_mutex_destroy(&lock);
+
+    // condition variable destroy
+	pthread_cond_destroy(&queue_full);
+	pthread_cond_destroy(&queue_empty);
+
+	
+	return 0;
+	
+}
